@@ -205,7 +205,12 @@ const FRASES_PENSAR: string[] = [
 // ESCRIBIR TEXTO AQUÍ: mensaje final tras decir que sí
 const TEXTO_FINAL_TITULO = "Lo sabía 🥹";
 const TEXTO_FINAL =
-  "Prometo cuidarte, tener iniciativa cada día y darte siempre tu lugar. Ahora baja el teléfono y mírame a los ojos, que te quiero dar un abrazo.";
+  "Prometo cuidarte, tener iniciativa cada día y darte siempre tu lugar. Quédate viendo nuestros recuerdos mientras termina nuestra canción...";
+const TEXTO_EPILOGO_ETIQUETA = "Día 1 · Nuestra nueva etapa";
+const TEXTO_EPILOGO_TITULO = "Terminó la canción, pero lo nuestro apenas comienza";
+const TEXTO_EPILOGO_MENSAJE =
+  "Gracias por elegir empezar de nuevo conmigo. Ahora baja el teléfono y mírame a los ojos, que te quiero dar un abrazo.";
+const TIEMPO_FOTO_CELEBRACION_MS = 4200; // cada foto del epílogo se muestra 4.2s
 
 /* ---------------------------------------------------------------------
  *  🎬 TIPOS
@@ -330,6 +335,18 @@ html { scroll-behavior: smooth; background: #0d0609; }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 .animar-modal { animation: entrada-modal 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* Efecto cinematográfico Ken Burns para las fotos de celebración */
+@keyframes ken-burns-a {
+  0%   { transform: scale(1) translate3d(0, 0, 0); }
+  100% { transform: scale(1.09) translate3d(-1.5%, -1.5%, 0); }
+}
+@keyframes ken-burns-b {
+  0%   { transform: scale(1.07) translate3d(1.5%, 0, 0); }
+  100% { transform: scale(1) translate3d(-1%, 1.5%, 0); }
+}
+.ken-burns-par   { animation: ken-burns-a ${TIEMPO_FOTO_CELEBRACION_MS + 800}ms ease-out forwards; }
+.ken-burns-impar { animation: ken-burns-b ${TIEMPO_FOTO_CELEBRACION_MS + 800}ms ease-out forwards; }
 
 /* Cambio de texto del botón "pensarlo" */
 @keyframes cambio-texto {
@@ -827,6 +844,332 @@ function Visor({
   );
 }
 
+/** Formatea segundos como M:SS (ej. 3:45) */
+function formatearTiempo(seg: number): string {
+  if (!Number.isFinite(seg) || seg < 0) return "0:00";
+  const m = Math.floor(seg / 60);
+  const s = Math.floor(seg % 60);
+  return `${m}:${s < 10 ? "0" : ""}${s}`;
+}
+
+/**
+ * 🎬 CELEBRACIÓN Y EPÍLOGO FINAL CON PROYECCIÓN DE MOMENTOS JUNTOS:
+ * - Mientras termina de sonar la canción, proyecta de fondo las 39 fotos
+ *   con efecto Ken Burns, frases por capítulo y barra de progreso musical.
+ * - Tras unos segundos leyendo tu promesa, despeja la pantalla automáticamente
+ *   para que contemplen juntos los recuerdos pasando al ritmo de la pista.
+ * - Cuando la canción llega a su final natural (o si tocan "Cierre final"),
+ *   muestra la escena final de película invitándola a bajar el celular y abrazarte.
+ */
+function CelebracionEpilogo({
+  pistaTerminada,
+  progresoAudio,
+  silenciado,
+  onAlternarSonido,
+  onForzarCierrePista,
+  onRepetirCancion,
+  onAbrirAlbum,
+  onCerrar,
+}: {
+  pistaTerminada: boolean;
+  progresoAudio: { actual: number; duracion: number };
+  silenciado: boolean;
+  onAlternarSonido: () => void;
+  onForzarCierrePista: () => void;
+  onRepetirCancion: () => void;
+  onAbrirAlbum: () => void;
+  onCerrar: () => void;
+}) {
+  const [indiceFoto, setIndiceFoto] = useState(0);
+  const [mostrarTarjetaPromesa, setMostrarTarjetaPromesa] = useState(true);
+  const totalFotos = FOTOS_PLANAS.length;
+  const fotoActual = FOTOS_PLANAS[indiceFoto];
+  const capituloActual = ALBUM.find((c) => c.titulo === fotoActual.capitulo);
+
+  // Avanza automáticamente de recuerdo cada TIEMPO_FOTO_CELEBRACION_MS mientras suena la pista
+  useEffect(() => {
+    if (pistaTerminada) return;
+    const timer = window.setInterval(() => {
+      setIndiceFoto((i) => (i + 1) % totalFotos);
+    }, TIEMPO_FOTO_CELEBRACION_MS);
+    return () => window.clearInterval(timer);
+  }, [pistaTerminada, totalFotos]);
+
+  // Tras 7.5s de leer tu promesa inicial, despeja suavemente la tarjeta para lucir las fotos
+  useEffect(() => {
+    if (pistaTerminada || !mostrarTarjetaPromesa) return;
+    const timer = window.setTimeout(() => {
+      setMostrarTarjetaPromesa(false);
+    }, 7500);
+    return () => window.clearTimeout(timer);
+  }, [pistaTerminada, mostrarTarjetaPromesa]);
+
+  // Precarga las siguientes 2 fotos para que el crossfade sea instantáneo
+  useEffect(() => {
+    [1, 2].forEach((offset) => {
+      const sig = FOTOS_PLANAS[(indiceFoto + offset) % totalFotos];
+      const img = new Image();
+      img.src = `/album/${sig.id}.webp`;
+    });
+  }, [indiceFoto, totalFotos]);
+
+  const porcentajeCancion =
+    progresoAudio.duracion > 0
+      ? Math.min(100, (progresoAudio.actual / progresoAudio.duracion) * 100)
+      : 0;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Celebración de nuestra nueva etapa"
+      className="fixed inset-0 z-[70] flex flex-col justify-between overflow-hidden bg-[#0a0407] text-stone-100 select-none"
+    >
+      {/* =============== FONDO AMBIENTAL CON NUESTROS MOMENTOS (KEN BURNS) =============== */}
+      <AnimatePresence mode="sync">
+        <motion.div
+          key={fotoActual.id}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 1.25, ease: "easeInOut" }}
+          className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
+        >
+          {/* Halo de color difuminado que llena toda la pantalla */}
+          <img
+            src={`/album/thumbs/${fotoActual.id}.webp`}
+            alt=""
+            aria-hidden
+            className="absolute inset-0 h-full w-full scale-125 object-cover opacity-40 blur-2xl"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#0d0609]/80 via-[#0d0609]/35 to-[#0d0609]/90" />
+        </motion.div>
+      </AnimatePresence>
+
+      {/* =============== BARRA SUPERIOR DEL EPÍLOGO =============== */}
+      <div
+        style={{ paddingTop: "max(0.85rem, env(safe-area-inset-top))" }}
+        className="relative z-20 mx-auto flex w-full max-w-md items-center justify-between px-4 pb-2"
+      >
+        <button
+          type="button"
+          onClick={onAlternarSonido}
+          className="inline-flex items-center gap-2 rounded-full border border-amber-200/25 bg-black/45 px-3 py-1.5 text-xs text-amber-200 backdrop-blur-md transition active:scale-95"
+        >
+          <div className={`flex h-3 items-end gap-[2px] ${silenciado ? "opacity-30" : ""}`}>
+            <span className="h-2 w-[2px] animate-pulse rounded-full bg-rose-400" />
+            <span className="h-3 w-[2px] animate-pulse rounded-full bg-amber-300" style={{ animationDelay: "200ms" }} />
+            <span className="h-1.5 w-[2px] animate-pulse rounded-full bg-rose-400" style={{ animationDelay: "400ms" }} />
+          </div>
+          <span>{silenciado ? "Activar sonido" : "Sonando"}</span>
+        </button>
+
+        {!pistaTerminada && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setMostrarTarjetaPromesa((v) => !v)}
+              className="rounded-full border border-white/15 bg-black/45 px-3 py-1.5 text-xs text-stone-200 backdrop-blur-md transition active:scale-95"
+            >
+              {mostrarTarjetaPromesa ? "📸 Ver fotos" : "💌 Mi promesa"}
+            </button>
+            <button
+              type="button"
+              onClick={onCerrar}
+              aria-label="Volver a la carta"
+              className="rounded-full border border-white/15 bg-black/45 p-1.5 text-stone-300 backdrop-blur-md active:scale-95"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* =============== ESCENARIO CENTRAL =============== */}
+      <div className="relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center px-5 py-2">
+        <AnimatePresence mode="wait">
+          {pistaTerminada ? (
+            /* ---------- ESCENA FINAL DE PELÍCULA (CUANDO TERMINA LA PISTA) ---------- */
+            <motion.div
+              key="cierre-pelicula"
+              initial={{ opacity: 0, scale: 0.94, y: 18 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.85, ease: [0.16, 1, 0.3, 1] }}
+              className="tarjeta-terciopelo w-full rounded-3xl p-7 text-center shadow-2xl shadow-black/80 backdrop-blur-xl"
+            >
+              <div className="sello-lacre animar-latido mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full border border-amber-200/40">
+                <span className="fuente-serif text-base font-bold tracking-widest text-amber-100">
+                  {CARTA_SELLO}
+                </span>
+              </div>
+
+              <p className="text-[0.68rem] font-semibold tracking-[0.28em] text-amber-300/90 uppercase">
+                {TEXTO_EPILOGO_ETIQUETA}
+              </p>
+
+              <h3 className="fuente-serif brillo-texto mt-3 text-2xl leading-snug text-amber-100">
+                {TEXTO_EPILOGO_TITULO}
+              </h3>
+
+              <p className="fuente-serif mt-4 text-base leading-relaxed text-stone-200 italic">
+                “{TEXTO_EPILOGO_MENSAJE}”
+              </p>
+
+              <p className="fuente-manuscrita mt-5 text-4xl text-rose-400">{CARTA_FIRMA} ❤️</p>
+
+              <div className="mt-7 flex flex-col gap-2.5 border-t border-amber-200/15 pt-5">
+                <button
+                  type="button"
+                  onClick={onRepetirCancion}
+                  className="brillo-boton inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-rose-500 to-rose-600 px-5 py-3 text-sm font-semibold text-white transition active:scale-95"
+                >
+                  <Sparkles className="h-4 w-4" aria-hidden />
+                  Volver a escuchar y ver momentos
+                </button>
+                <button
+                  type="button"
+                  onClick={onAbrirAlbum}
+                  className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-amber-300/30 bg-amber-400/10 px-5 py-2.5 text-xs font-medium text-amber-200 transition active:scale-95"
+                >
+                  <Camera className="h-4 w-4" aria-hidden />
+                  {TEXTO_ABRIR_ALBUM} ({totalFotos} fotos)
+                </button>
+              </div>
+            </motion.div>
+          ) : (
+            /* ---------- PROYECCIÓN DE MOMENTOS JUNTOS EN VIVO MIENTRAS TERMINA LA PISTA ---------- */
+            <motion.div
+              key="proyeccion-viva"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="relative flex w-full flex-col items-center"
+            >
+              {/* Marco fotográfico con Ken Burns */}
+              <div className="tarjeta-terciopelo relative w-full max-w-[310px] overflow-hidden rounded-2xl p-2.5 pb-4 shadow-2xl shadow-black/80">
+                <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl bg-slate-900">
+                  <AnimatePresence mode="sync">
+                    <motion.img
+                      key={fotoActual.id}
+                      src={`/album/${fotoActual.id}.webp`}
+                      alt={fotoActual.nota ?? fotoActual.capitulo}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.9, ease: "easeInOut" }}
+                      className={`absolute inset-0 h-full w-full object-cover ${
+                        indiceFoto % 2 === 0 ? "ken-burns-par" : "ken-burns-impar"
+                      }`}
+                    />
+                  </AnimatePresence>
+
+                  {/* Gradiente sutil inferior y contador */}
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/75 to-transparent" />
+                  <span className="absolute top-2.5 right-2.5 rounded-full bg-black/55 px-2.5 py-0.5 text-[0.65rem] tracking-widest text-amber-200/90 backdrop-blur-sm">
+                    {indiceFoto + 1} / {totalFotos}
+                  </span>
+
+                  {/* Controles discretos para cambiar de foto si ella quiere */}
+                  <button
+                    type="button"
+                    onClick={() => setIndiceFoto((i) => (i - 1 + totalFotos) % totalFotos)}
+                    aria-label="Recuerdo anterior"
+                    className="absolute top-1/2 left-2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white/85 backdrop-blur-sm active:scale-90"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIndiceFoto((i) => (i + 1) % totalFotos)}
+                    aria-label="Siguiente recuerdo"
+                    className="absolute top-1/2 right-2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white/85 backdrop-blur-sm active:scale-90"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Pie de foto dinámico del recuerdo actual */}
+                <div className="mt-3 px-2 text-center">
+                  <p className="text-[0.65rem] font-medium tracking-[0.22em] text-amber-300/90 uppercase">
+                    {fotoActual.fecha} · {fotoActual.capitulo}
+                  </p>
+                  <p className="fuente-manuscrita mt-0.5 text-2xl leading-snug text-stone-100">
+                    {fotoActual.nota ?? capituloActual?.frase ?? "Un momento inolvidable contigo"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Tarjeta flotante con tu promesa (visible al inicio o al pulsar "Mi promesa") */}
+              <AnimatePresence>
+                {mostrarTarjetaPromesa && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 16, scale: 0.95 }}
+                    transition={{ duration: 0.45 }}
+                    className=" absolute inset-x-2 bottom-2 z-30 rounded-3xl border border-amber-200/30 bg-[#16080f]/95 p-5 text-center shadow-2xl shadow-black/90 backdrop-blur-xl"
+                  >
+                    <Sparkles className="mx-auto mb-1.5 h-5 w-5 text-amber-300" aria-hidden />
+                    <h3 className="fuente-manuscrita text-3xl text-amber-200">{TEXTO_FINAL_TITULO}</h3>
+                    <p className="fuente-serif mt-2 text-sm leading-relaxed text-stone-200">
+                      {TEXTO_FINAL}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setMostrarTarjetaPromesa(false)}
+                      className="brillo-boton mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-rose-500 to-rose-600 px-5 py-2.5 text-xs font-semibold text-white transition active:scale-95"
+                    >
+                      <Heart className="h-3.5 w-3.5" fill="currentColor" aria-hidden />
+                      Contemplar nuestros recuerdos juntos
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* =============== BARRA INFERIOR: PROGRESO DE LA PISTA Y CIERRE =============== */}
+      {!pistaTerminada && (
+        <div
+          style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
+          className="relative z-20 mx-auto w-full max-w-md px-5 pt-2"
+        >
+          <div className="rounded-2xl border border-amber-200/15 bg-black/55 px-4 py-3 backdrop-blur-md">
+            <div className="flex items-center justify-between text-[0.7rem] text-amber-100/90">
+              <span className="truncate font-medium">🎵 {CANCION_ACTIVA.titulo}</span>
+              <span className="ml-2 shrink-0 tabular-nums text-amber-200/75">
+                {formatearTiempo(progresoAudio.actual)} / {formatearTiempo(progresoAudio.duracion)}
+              </span>
+            </div>
+
+            {/* Barra de progreso de la canción hacia el cierre final */}
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-rose-500 via-amber-300 to-rose-400 transition-all duration-300"
+                style={{ width: `${porcentajeCancion}%` }}
+              />
+            </div>
+
+            <div className="mt-2.5 flex items-center justify-between text-[0.68rem] text-stone-400">
+              <span>Disfrutando nuestros recuerdos hasta terminar la canción</span>
+              <button
+                type="button"
+                onClick={onForzarCierrePista}
+                className="ml-2 shrink-0 font-medium text-amber-300 underline decoration-amber-300/40 underline-offset-2 active:opacity-75"
+              >
+                Ver cierre final →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------------------------------------------------------------------
  *  🏠 COMPONENTE PRINCIPAL
  * ------------------------------------------------------------------- */
@@ -839,6 +1182,8 @@ export default function App() {
   const [visor, setVisor] = useState<number | null>(null); // índice de la foto abierta en el visor
   const [vista, setVista] = useState<Vista>("historia"); // sección activa: historia principal o álbum separado
   const [silenciado, setSilenciado] = useState(false);
+  const [pistaTerminada, setPistaTerminada] = useState(false);
+  const [progresoAudio, setProgresoAudio] = useState({ actual: 0, duracion: 0 });
   const [modoAuto, setModoAuto] = useState(MODO_AUTOMATICO_INICIAL);
   const [cartaCompleta, setCartaCompleta] = useState(false);
   const [forzarCartaCompleta, setForzarCartaCompleta] = useState(false);
@@ -1136,7 +1481,14 @@ export default function App() {
   const aceptar = () => {
     setAceptado(true);
     setModalAbierto(true);
+    setPistaTerminada(false);
     dispararConfeti();
+    const audio = audioRef.current;
+    if (audio) {
+      if (audio.paused) audio.play().catch(() => undefined);
+      // Suave realce del volumen para envolver la celebración
+      audio.volume = Math.min(1, VOLUMEN_FINAL + 0.15);
+    }
   };
 
   const pensarlo = () => {
@@ -1168,7 +1520,27 @@ export default function App() {
       <style>{ESTILOS}</style>
 
       {/* Motor de audio ambiental de fondo */}
-      <audio ref={audioRef} src={CANCION_ACTIVA.src} loop preload="auto" />
+      <audio
+        ref={audioRef}
+        src={CANCION_ACTIVA.src}
+        loop={!aceptado}
+        preload="auto"
+        onTimeUpdate={(e) => {
+          const audio = e.currentTarget;
+          setProgresoAudio({ actual: audio.currentTime, duracion: audio.duration || 0 });
+          // Si ya aceptó y faltan menos de 4.5 segundos para el final de la canción, fade-out suave
+          if (aceptado && audio.duration && audio.duration - audio.currentTime <= 4.5 && !silenciado) {
+            const restante = Math.max(0, audio.duration - audio.currentTime);
+            audio.volume = Math.max(0, (restante / 4.5) * (VOLUMEN_FINAL + 0.15));
+          }
+        }}
+        onEnded={() => {
+          if (aceptado) {
+            setPistaTerminada(true);
+            dispararConfeti();
+          }
+        }}
+      />
 
       <motion.div
         aria-hidden
@@ -1437,48 +1809,32 @@ export default function App() {
       {/* =============== VISOR DE FOTOS DEL ÁLBUM =============== */}
       {visor !== null && <Visor indice={visor} onCambiar={setVisor} onCerrar={() => setVisor(null)} />}
 
-      {/* =============== MODAL FINAL =============== */}
+      {/* =============== CELEBRACIÓN Y EPÍLOGO FINAL (MOMENTOS + CIERRE DE LA PISTA) =============== */}
       {modalAbierto && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="titulo-final"
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/85 p-5 backdrop-blur-md"
-        >
-          <div className="animar-modal relative w-full max-w-sm rounded-3xl border border-rose-400/25 bg-gradient-to-b from-slate-900 to-rose-950 p-8 text-center shadow-2xl shadow-rose-950/60">
-            <button
-              type="button"
-              onClick={() => setModalAbierto(false)}
-              aria-label="Cerrar"
-              className="absolute top-3 right-3 rounded-full p-2 text-slate-400 active:bg-white/10"
-            >
-              <X className="h-5 w-5" />
-            </button>
-            <Sparkles className="mx-auto mb-3 h-7 w-7 text-amber-400" aria-hidden />
-            <h3 id="titulo-final" className="fuente-manuscrita text-4xl text-amber-300">
-              {TEXTO_FINAL_TITULO}
-            </h3>
-            <p className="fuente-serif mt-4 text-lg leading-relaxed text-slate-100">{TEXTO_FINAL}</p>
-            <Heart className="animar-latido mx-auto mt-6 h-9 w-9 text-rose-500 drop-shadow-[0_0_14px_rgba(244,63,94,0.7)]" fill="currentColor" strokeWidth={0} aria-hidden />
-            <div className="mt-6 flex flex-col gap-3">
-              <button
-                type="button"
-                onClick={() => cambiarVista("album")}
-                className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-amber-400/35 bg-amber-400/10 px-6 py-3 text-sm font-medium text-amber-200 transition active:scale-95 active:bg-amber-400/20"
-              >
-                <Camera className="h-4 w-4" aria-hidden />
-                {TEXTO_ABRIR_ALBUM}
-              </button>
-              <button
-                type="button"
-                onClick={() => setModalAbierto(false)}
-                className="min-h-11 rounded-full bg-white/10 px-8 py-2.5 text-sm text-slate-200 active:bg-white/20"
-              >
-                Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
+        <CelebracionEpilogo
+          pistaTerminada={pistaTerminada}
+          progresoAudio={progresoAudio}
+          silenciado={silenciado}
+          onAlternarSonido={alternarSonido}
+          onForzarCierrePista={() => {
+            setPistaTerminada(true);
+            dispararConfeti();
+          }}
+          onRepetirCancion={() => {
+            setPistaTerminada(false);
+            const audio = audioRef.current;
+            if (audio) {
+              audio.currentTime = CANCION_ACTIVA.segundoInicio;
+              audio.volume = VOLUMEN_FINAL;
+              audio.play().catch(() => undefined);
+            }
+          }}
+          onAbrirAlbum={() => {
+            setModalAbierto(false);
+            cambiarVista("album");
+          }}
+          onCerrar={() => setModalAbierto(false)}
+        />
       )}
     </div>
   );
